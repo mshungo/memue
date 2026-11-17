@@ -18,10 +18,12 @@
 <div id="gate" hidden>
   <div class="gate-card">
     <h1>Memue</h1>
-    <p id="gateMsg">Dropbox のメモを閲覧・編集します。<br>このデバイスを Dropbox に接続してください。</p>
-    <button id="loginBtn" class="primary">Dropbox に接続</button>
+    <p id="gateMsg">メモの保存先を選んでください。</p>
+    <button id="regrantBtn" class="primary" hidden>フォルダへのアクセスを許可</button>
+    <button id="localBtn" class="primary" hidden>このPCのフォルダを使う（高速）</button>
+    <button id="loginBtn">Dropbox に接続</button>
     <p id="gateErr" class="err"></p>
-    <p class="muted">メモはこのブラウザと Dropbox の間でだけやり取りされ、他のサーバーには送られません。</p>
+    <p class="muted">「このPCのフォルダ」は、Dropbox を入れているPCで Dropbox 内のメモフォルダを直接読み書きします。<br>「Dropbox に接続」は、スマホなどフォルダがない端末用です。どちらもメモが他のサーバーに送られることはありません。</p>
   </div>
 </div>
 
@@ -42,8 +44,8 @@
     </div>
     <ul id="list"></ul>
     <div class="side-foot">
-      <span id="count" class="muted"></span>
-      <button id="logoutBtn">接続を解除</button>
+      <div class="foot-row"><span id="count" class="muted"></span><label class="muted" title="編集画面で Vim のキー操作を使う"><input id="vimChk" type="checkbox"> Vim</label></div>
+      <div class="foot-row"><button id="switchBtn" title="Dropbox / このPCのフォルダ を切り替える">保存先を切替</button><button id="logoutBtn">接続を解除</button></div>
     </div>
   </aside>
   <div id="scrim"></div>
@@ -57,7 +59,7 @@
       <button id="delBtn" title="削除" disabled>削除</button>
     </header>
     <div id="panes" hidden>
-      <textarea id="ed" spellcheck="false"></textarea>
+      <div id="ed"></div>
       <article id="pv" class="md"></article>
     </div>
     <div id="empty">メモを選択するか、「＋ 新規」で作成してください</div>
@@ -66,6 +68,7 @@
 
 <script src="vendor/marked.js"></script>
 <script src="vendor/purify.js"></script>
+<script src="vendor/editor.js"></script>
 <script src="config.js"></script>
 <script src="app.js"></script>
 </body>
