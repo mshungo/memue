@@ -211,14 +211,22 @@ const SORTS = {
 };
 let sortKey = SORTS[lsGet('memue.sort')] ? lsGet('memue.sort') : 'mtime-desc';
 
-const editor = MemueEditor($('ed'), {
-  onChange() {
-    if (!cur) return;
-    cur.dirty = true; setStatus('未保存');
-    clearTimeout(saveTimer); saveTimer = setTimeout(save, backend.kind === 'local' ? 600 : 1500);
-  },
-  onSave: () => save(), // Vim の :w
-});
+// 編集欄（素の textarea。軽さと日本語入力の安定を優先）
+const editor = {
+  get: () => $('ed').value,
+  set(text) { $('ed').value = text; $('ed').scrollTop = 0; $('ed').setSelectionRange(0, 0); },
+  focus: () => $('ed').focus(),
+};
+$('ed').oninput = () => {
+  if (!cur) return;
+  cur.dirty = true; setStatus('未保存');
+  clearTimeout(saveTimer); saveTimer = setTimeout(save, backend.kind === 'local' ? 600 : 1500);
+};
+$('ed').onkeydown = (e) => { // Tabでインデント
+  if (e.key !== 'Tab' || e.ctrlKey || e.altKey || e.metaKey || e.isComposing) return;
+  e.preventDefault();
+  const t = e.target; t.setRangeText('  ', t.selectionStart, t.selectionEnd, 'end'); t.dispatchEvent(new Event('input'));
+};
 
 function firstLine(text) {
   for (const l of text.split('\n')) { const t = l.replace(/^#+\s*/, '').trim(); if (t && t !== '---') return t.slice(0, 80); }
@@ -277,8 +285,6 @@ async function startApp() {
   $('app').hidden = false;
   setMode(lsGet('memue.mode') || (innerWidth <= 760 ? 'preview' : 'edit'));
   $('sort').value = sortKey;
-  const vimOn = lsGet('memue.vim') ? lsGet('memue.vim') === '1' : matchMedia('(pointer: fine)').matches;
-  $('vimChk').checked = vimOn; editor.setVim(vimOn);
   const h = decodeURIComponent(location.hash.slice(1));
   try { files = JSON.parse(lsGet('memue.files') || '[]'); } catch { files = []; }
   for (const [k, v] of await idb.all('texts')) texts.set(k, v);
@@ -289,7 +295,6 @@ async function startApp() {
   setInterval(() => { if (!document.hidden) loadFiles().catch(() => {}); }, backend.refreshMs);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) loadFiles().catch(() => {}); });
 }
-$('vimChk').onchange = () => { editor.setVim($('vimChk').checked); lsSet('memue.vim', $('vimChk').checked ? '1' : '0'); };
 
 // ---------- 一覧・検索 ----------
 async function loadFiles() {
@@ -467,15 +472,7 @@ $('scrim').onclick = () => document.body.classList.remove('menu');
 addEventListener('keydown', (e) => {
   const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
   if (mod && k === 's') { e.preventDefault(); save(); return; }
-  if (mod && k === 'e' && cur) { e.preventDefault(); setMode(isPreview() ? 'edit' : 'preview'); return; }
-  // 閲覧中は Vim 風に j/k でスクロール、i で編集へ
-  if (!cur || !isPreview() || mod || e.altKey || e.isComposing || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
-  const pv = $('pv'), page = pv.clientHeight * 0.85;
-  const by = { j: 60, k: -60, d: page / 2, u: -page / 2, ' ': page }[e.key];
-  if (by) { e.preventDefault(); pv.scrollBy(0, by); }
-  else if (e.key === 'g') { e.preventDefault(); pv.scrollTop = 0; }
-  else if (e.key === 'G') { e.preventDefault(); pv.scrollTop = pv.scrollHeight; }
-  else if (e.key === 'i') { e.preventDefault(); setMode('edit'); }
+  if (mod && k === 'e' && cur) { e.preventDefault(); setMode(isPreview() ? 'edit' : 'preview'); }
 });
 
 if ('serviceWorker' in navigator && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) navigator.serviceWorker.register('sw.js').catch(() => {});

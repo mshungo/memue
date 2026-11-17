@@ -63,8 +63,9 @@ header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border
 #empty { flex: 1; display: grid; place-items: center; color: var(--muted); padding: 16px; text-align: center; }
 
 #panes { flex: 1; min-height: 0; display: flex; }
-#ed { flex: 1; min-width: 0; min-height: 0; background: var(--bg); font-size: 15px; display: flex; }
-#ed > .cm-editor { flex: 1; min-width: 0; }
+#ed { flex: 1; min-width: 0; min-height: 0; resize: none; border: 0; outline: 0 !important; background: var(--bg);
+  font: inherit; line-height: 1.75; tab-size: 2;
+  padding: 18px max(22px, calc(50% - 400px)) 40vh; }
 #pv { flex: 1; min-width: 0; overflow-y: auto; padding: 18px 26px 60px; }
 .mode-edit #pv, .mode-preview #ed { display: none; }
 .mode-preview #pv > * { max-width: 760px; margin-left: auto; margin-right: auto; }

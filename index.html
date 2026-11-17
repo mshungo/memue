@@ -44,7 +44,7 @@
     </div>
     <ul id="list"></ul>
     <div class="side-foot">
-      <div class="foot-row"><span id="count" class="muted"></span><label class="muted" title="編集画面で Vim のキー操作を使う"><input id="vimChk" type="checkbox"> Vim</label></div>
+      <div class="foot-row"><span id="count" class="muted"></span></div>
       <div class="foot-row"><button id="switchBtn" title="Dropbox / このPCのフォルダ を切り替える">保存先を切替</button><button id="logoutBtn">接続を解除</button></div>
     </div>
   </aside>
@@ -59,7 +59,7 @@
       <button id="delBtn" title="削除" disabled>削除</button>
     </header>
     <div id="panes" hidden>
-      <div id="ed"></div>
+      <textarea id="ed" spellcheck="false"></textarea>
       <article id="pv" class="md"></article>
     </div>
     <div id="empty">メモを選択するか、「＋ 新規」で作成してください</div>
@@ -68,7 +68,6 @@
 
 <script src="vendor/marked.js"></script>
 <script src="vendor/purify.js"></script>
-<script src="vendor/editor.js"></script>
 <script src="config.js"></script>
 <script src="app.js"></script>
 </body>
