@@ -31,7 +31,15 @@
       <strong>Memue</strong>
       <button id="newBtn" class="primary">＋ 新規</button>
     </div>
-    <input id="q" type="search" placeholder="検索（ファイル名・本文）">
+    <div class="side-tools">
+      <input id="q" type="search" placeholder="検索（ファイル名・本文）">
+      <select id="sort" title="並び順">
+        <option value="mtime-desc">更新が新しい順</option>
+        <option value="mtime-asc">更新が古い順</option>
+        <option value="name-desc">名前の降順</option>
+        <option value="name-asc">名前の昇順</option>
+      </select>
+    </div>
     <ul id="list"></ul>
     <div class="side-foot">
       <span id="count" class="muted"></span>
@@ -45,11 +53,7 @@
       <button id="menuBtn" title="一覧">☰</button>
       <input id="title" spellcheck="false" placeholder="ファイル名" disabled>
       <span id="status" class="muted"></span>
-      <div class="modes">
-        <button data-mode="edit">編集</button>
-        <button data-mode="split">分割</button>
-        <button data-mode="preview">閲覧</button>
-      </div>
+      <button id="modeBtn"></button>
       <button id="delBtn" title="削除" disabled>削除</button>
     </header>
     <div id="panes" hidden>

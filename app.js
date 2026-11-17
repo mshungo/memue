@@ -64,6 +64,7 @@ async function logout() {
   if (cur && cur.dirty && !(await save()) && !confirm('保存できていない変更があります。破棄して解除しますか？')) return;
   if (!confirm('このデバイスと Dropbox の接続を解除しますか？')) return;
   try { await rpc('auth/token/revoke', null); } catch {}
+  await idb.clear(); try { localStorage.removeItem('memue.files'); } catch {}
   auth = null; saveAuth(); if (cur) cur.dirty = false; location.reload();
 }
 
@@ -93,7 +94,7 @@ async function download(name) {
   const r = await dbx('https://content.dropboxapi.com/2/files/download', { method: 'POST', headers: { 'Dropbox-API-Arg': headerJson({ path: pathOf(name) }) } });
   const buf = new Uint8Array(await r.arrayBuffer());
   let rev = null; try { rev = JSON.parse(r.headers.get('dropbox-api-result')).rev; } catch {}
-  if (!rev) rev = (await rpc('files/get_metadata', { path: pathOf(name) })).rev;
+  if (!rev) { const f = files.find((x) => x.name === name); rev = f ? f.rev : (await rpc('files/get_metadata', { path: pathOf(name) })).rev; }
   const bom = buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf;
   const raw = new TextDecoder('utf-8').decode(buf);
   return { rev, bom, crlf: raw.includes('\r\n'), text: raw.replace(/\r\n/g, '\n') };
@@ -114,13 +115,44 @@ async function listAll() {
   const out = r.entries;
   while (r.has_more) { r = await rpc('files/list_folder/continue', { cursor: r.cursor }); out.push(...r.entries); }
   return out.filter((e) => e['.tag'] === 'file' && /\.md$/i.test(e.name))
-    .map((e) => ({ name: e.name, rev: e.rev, mtime: Date.parse(e.server_modified), size: e.size }))
-    .sort((a, b) => b.mtime - a.mtime);
+    .map((e) => ({ name: e.name, rev: e.rev, mtime: Date.parse(e.client_modified || e.server_modified), size: e.size }));
 }
 
 // ---------- 状態 ----------
 let files = [], cur = null; // cur = {name, rev, dirty, bom, crlf}
-const texts = new Map();    // name -> {rev, text}  本文キャッシュ（メモリ内のみ。検索と一覧の見出し用）
+const texts = new Map();    // name -> {rev, text, bom, crlf}  本文キャッシュ（検索・一覧の見出し・即時表示用）
+
+// 本文キャッシュはこの端末の IndexedDB にも保存し、次回起動を速くする（接続解除で消去）
+const idb = (() => {
+  let dbp = null;
+  const open = () => dbp || (dbp = new Promise((res, rej) => {
+    const r = indexedDB.open('memue', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('texts');
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  }));
+  const run = async (mode, fn, fallback) => {
+    try { const s = (await open()).transaction('texts', mode).objectStore('texts'); return await new Promise((res, rej) => fn(s, res, rej)); } catch { return fallback; }
+  };
+  const simple = (mode, op) => run(mode, (s, res, rej) => { const q = op(s); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+  return {
+    put: (k, v) => simple('readwrite', (s) => s.put(v, k)),
+    del: (k) => simple('readwrite', (s) => s.delete(k)),
+    clear: () => simple('readwrite', (s) => s.clear()),
+    all: () => run('readonly', (s, res, rej) => { const k = s.getAllKeys(), v = s.getAll(); v.onsuccess = () => res(k.result.map((key, i) => [key, v.result[i]])); v.onerror = () => rej(v.error); }, []),
+  };
+})();
+const setText = (name, o) => { texts.set(name, o); idb.put(name, o); };
+const dropText = (name) => { texts.delete(name); idb.del(name); };
+const saveFilesCache = () => { try { localStorage.setItem('memue.files', JSON.stringify(files)); } catch {} };
+
+const SORTS = {
+  'mtime-desc': (a, b) => b.mtime - a.mtime,
+  'mtime-asc': (a, b) => a.mtime - b.mtime,
+  'name-desc': (a, b) => b.name.localeCompare(a.name, 'ja', { numeric: true }),
+  'name-asc': (a, b) => a.name.localeCompare(b.name, 'ja', { numeric: true }),
+};
+let sortKey = 'mtime-desc';
+try { const k = localStorage.getItem('memue.sort'); if (SORTS[k]) sortKey = k; } catch {}
 let saveTimer = null, saving = null;
 
 function firstLine(text) {
@@ -139,10 +171,15 @@ async function boot() {
   }
   if (!auth) { $('gate').hidden = false; return; }
   $('app').hidden = false;
-  setMode(localStorage.getItem('memue.mode') || (innerWidth <= 760 ? 'preview' : 'split'));
-  await loadFiles();
+  setMode(localStorage.getItem('memue.mode') || (innerWidth <= 760 ? 'preview' : 'edit'));
+  $('sort').value = sortKey;
   const h = decodeURIComponent(location.hash.slice(1));
-  if (h && files.some((f) => f.name === h)) openFile(h);
+  try { files = JSON.parse(localStorage.getItem('memue.files') || '[]'); } catch { files = []; }
+  for (const [k, v] of await idb.all()) texts.set(k, v);
+  const cached = files.length > 0;
+  if (cached) { renderList(); if (h && files.some((f) => f.name === h)) openFile(h); else setStatus('更新を確認中…'); }
+  const first = loadFiles().then(() => { if (!cur) setStatus(''); if (!cached && h && files.some((f) => f.name === h)) openFile(h); });
+  if (!cached) await first; else first.catch((e) => setStatus(navigator.onLine ? e.message : 'オフラインです', true));
   setInterval(() => { if (!document.hidden) loadFiles().catch(() => {}); }, 60000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) loadFiles().catch(() => {}); });
 }
@@ -152,8 +189,8 @@ $('logoutBtn').onclick = logout;
 // ---------- 一覧・検索 ----------
 async function loadFiles() {
   files = await listAll();
-  for (const n of [...texts.keys()]) if (!files.some((f) => f.name === n)) texts.delete(n);
-  renderList(); indexTexts();
+  for (const n of [...texts.keys()]) if (!files.some((f) => f.name === n)) dropText(n);
+  saveFilesCache(); renderList(); indexTexts();
   // 開いているメモが他の端末で更新されていたら、未編集の場合に限り読み直す
   if (cur && !cur.dirty && !saving) {
     const f = files.find((x) => x.name === cur.name);
@@ -161,17 +198,17 @@ async function loadFiles() {
   }
 }
 let indexing = false;
-async function indexTexts() { // 本文をバックグラウンドで取得（4並列）
+async function indexTexts() { // 未取得・更新済みの本文だけをバックグラウンドで取得（6並列）
   if (indexing) return; indexing = true;
   const todo = files.filter((f) => !(texts.has(f.name) && texts.get(f.name).rev === f.rev));
   let dirtyList = false;
   const worker = async () => {
     for (let f; (f = todo.shift());) {
-      try { const d = await download(f.name); texts.set(f.name, { rev: d.rev, text: d.text }); dirtyList = true; } catch (e) { if (e.status === 429) await new Promise((r) => setTimeout(r, 3000)); }
+      try { setText(f.name, await download(f.name)); dirtyList = true; } catch (e) { if (e.status === 429) await new Promise((r) => setTimeout(r, 3000)); }
     }
   };
   const tick = setInterval(() => { if (dirtyList) { dirtyList = false; renderList(); } }, 700);
-  await Promise.all([worker(), worker(), worker(), worker()]);
+  await Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]);
   clearInterval(tick); indexing = false; renderList();
 }
 function fmtDate(ms) {
@@ -183,7 +220,7 @@ function renderList() {
   const q = $('q').value.trim().toLowerCase();
   const ul = $('list'), top = ul.scrollTop; ul.textContent = '';
   let n = 0;
-  for (const f of files) {
+  for (const f of [...files].sort(SORTS[sortKey])) {
     const t = texts.get(f.name); let sub = t ? firstLine(t.text) || '（空）' : '';
     if (q) {
       const i = t ? t.text.toLowerCase().indexOf(q) : -1;
@@ -201,6 +238,7 @@ function renderList() {
   $('count').textContent = n + ' 件' + (indexing ? '（本文を読み込み中…）' : '');
 }
 $('q').oninput = renderList;
+$('sort').onchange = () => { sortKey = $('sort').value; try { localStorage.setItem('memue.sort', sortKey); } catch {} $('list').scrollTop = 0; renderList(); };
 
 // ---------- 開く・保存 ----------
 function setStatus(t, bad) { $('status').textContent = t; $('status').style.color = bad ? 'var(--danger)' : ''; }
@@ -214,11 +252,14 @@ function render() {
 async function openFile(name, keepScroll) {
   if (cur && cur.name === name) return;
   if (!(await flush())) return;
-  setStatus('読み込み中…');
-  let d;
-  try { d = await download(name); }
-  catch (e) { setStatus(''); alert('開けませんでした: ' + e.message); return loadFiles().catch(() => {}); }
-  texts.set(name, { rev: d.rev, text: d.text });
+  const f = files.find((x) => x.name === name), c = texts.get(name);
+  let d = c && f && c.rev === f.rev ? c : null;
+  if (!d) {
+    setStatus('読み込み中…');
+    try { d = await download(name); }
+    catch (e) { setStatus(''); alert('開けませんでした: ' + e.message); return loadFiles().catch(() => {}); }
+    setText(name, d);
+  }
   cur = { name, rev: d.rev, dirty: false, bom: d.bom, crlf: d.crlf };
   $('ed').value = d.text; $('title').value = bare(name);
   $('title').disabled = $('delBtn').disabled = false;
@@ -226,7 +267,7 @@ async function openFile(name, keepScroll) {
   if (!keepScroll) $('ed').scrollTop = $('pv').scrollTop = 0;
   history.replaceState(null, '', '#' + encodeURIComponent(name));
   document.title = bare(name) + ' — Memue';
-  setStatus(''); render(); renderList();
+  setStatus(''); if (isPreview()) render(); renderList();
 }
 function closeFile() {
   cur = null; clearTimeout(saveTimer);
@@ -235,7 +276,7 @@ function closeFile() {
 }
 $('ed').oninput = () => {
   if (!cur) return;
-  cur.dirty = true; setStatus('未保存'); render();
+  cur.dirty = true; setStatus('未保存');
   clearTimeout(saveTimer); saveTimer = setTimeout(save, 1500);
 };
 // 保存。成功(または保存不要)なら true
@@ -248,8 +289,8 @@ async function save(force) {
   saving = (async () => {
     try {
       const m = await upload(target.name, content, force ? 'overwrite' : { '.tag': 'update', update: target.rev }, target);
-      target.rev = m.rev; texts.set(target.name, { rev: m.rev, text: content });
-      const f = files.find((x) => x.name === target.name); if (f) { f.rev = m.rev; f.mtime = Date.parse(m.server_modified) || Date.now(); }
+      target.rev = m.rev; setText(target.name, { rev: m.rev, text: content, bom: target.bom, crlf: target.crlf });
+      const f = files.find((x) => x.name === target.name); if (f) { f.rev = m.rev; f.mtime = Date.parse(m.client_modified || m.server_modified) || Date.now(); saveFilesCache(); }
       if (cur === target && $('ed').value === content) { target.dirty = false; setStatus('保存済み'); }
       return true;
     } catch (e) {
@@ -288,7 +329,7 @@ $('newBtn').onclick = async () => {
   try {
     await upload(name, '', 'add');
     cur = null; await loadFiles(); await openFile(name);
-    if ($('panes').className === 'mode-preview') setMode('edit');
+    if (isPreview()) setMode('edit');
     document.body.classList.remove('menu'); $('ed').focus();
   } catch (e) { alert('作成できませんでした: ' + e.message); }
 };
@@ -302,25 +343,28 @@ $('title').onchange = async () => {
   if (!(await save())) return back();
   try {
     const r = await rpc('files/move_v2', { from_path: pathOf(cur.name), to_path: pathOf(to), autorename: false });
-    const t = texts.get(cur.name); texts.delete(cur.name);
-    cur.name = r.metadata.name; cur.rev = r.metadata.rev; if (t) texts.set(cur.name, { rev: cur.rev, text: t.text });
+    const t = texts.get(cur.name); dropText(cur.name);
+    cur.name = r.metadata.name; cur.rev = r.metadata.rev; if (t) setText(cur.name, Object.assign({}, t, { rev: cur.rev }));
     back(); history.replaceState(null, '', '#' + encodeURIComponent(cur.name)); document.title = bare(cur.name) + ' — Memue';
     await loadFiles();
   } catch (e) { alert(/conflict/.test(e.summary || '') ? '同名のファイルがあります。' : '名前を変更できませんでした: ' + e.message); back(); }
 };
 $('delBtn').onclick = async () => {
   if (!cur || !confirm('「' + cur.name + '」を削除しますか？\n（Dropbox の「削除したファイル」から一定期間は復元できます）')) return;
-  try { await rpc('files/delete_v2', { path: pathOf(cur.name) }); closeFile(); await loadFiles(); }
+  try { await rpc('files/delete_v2', { path: pathOf(cur.name) }); dropText(cur.name); closeFile(); await loadFiles(); }
   catch (e) { alert('削除できませんでした: ' + e.message); }
 };
 
 // ---------- 表示モード・メニュー ----------
+const isPreview = () => $('panes').className === 'mode-preview';
 function setMode(m) {
-  if (!['edit', 'split', 'preview'].includes(m)) m = 'split';
+  if (m !== 'preview') m = 'edit';
   $('panes').className = 'mode-' + m; try { localStorage.setItem('memue.mode', m); } catch {}
-  for (const b of document.querySelectorAll('.modes button')) b.classList.toggle('on', b.dataset.mode === m);
+  $('modeBtn').textContent = m === 'edit' ? '閲覧' : '編集';
+  $('modeBtn').title = m === 'edit' ? '整形して表示' : '編集に戻る';
+  if (m === 'preview') render(); else if (cur) $('ed').focus();
 }
-for (const b of document.querySelectorAll('.modes button')) b.onclick = () => setMode(b.dataset.mode);
+$('modeBtn').onclick = () => setMode(isPreview() ? 'edit' : 'preview');
 $('menuBtn').onclick = () => document.body.classList.toggle('menu');
 $('scrim').onclick = () => document.body.classList.remove('menu');
 

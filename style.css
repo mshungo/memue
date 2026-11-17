@@ -36,7 +36,8 @@ input:focus, textarea:focus, button:focus-visible { outline: 2px solid var(--acc
 #side { width: 290px; flex: none; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--line); }
 .side-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px 6px; }
 .side-head strong { font-size: 17px; }
-#q { margin: 4px 12px 8px; }
+.side-tools { display: flex; flex-direction: column; gap: 6px; margin: 4px 12px 8px; }
+select { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
 #list { list-style: none; margin: 0; padding: 0 6px; overflow-y: auto; flex: 1; }
 #list li { padding: 7px 8px; border-radius: 6px; cursor: pointer; }
 #list li:hover { background: var(--hover); }
@@ -54,11 +55,6 @@ header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border
 #title { flex: 1; border-color: transparent; background: transparent; font-weight: 600; }
 #title:hover:not(:disabled), #title:focus { border-color: var(--line); background: var(--bg); }
 #status { flex: none; min-width: 5em; text-align: right; }
-.modes { display: flex; }
-.modes button { border-radius: 0; margin-left: -1px; }
-.modes button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
-.modes button:last-child { border-radius: 0 6px 6px 0; }
-.modes button.on { background: var(--sel); }
 #delBtn { color: var(--danger); }
 #empty { flex: 1; display: grid; place-items: center; color: var(--muted); padding: 16px; text-align: center; }
 
@@ -66,8 +62,8 @@ header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border
 #ed { flex: 1; min-width: 0; resize: none; border: 0; outline: 0 !important; padding: 18px 22px; background: var(--bg);
   font: 14px/1.7 ui-monospace, Consolas, "BIZ UDGothic", "MS Gothic", monospace; tab-size: 2; }
 #pv { flex: 1; min-width: 0; overflow-y: auto; padding: 18px 26px 60px; }
-.mode-split #pv { border-left: 1px solid var(--line); }
 .mode-edit #pv, .mode-preview #ed { display: none; }
+.mode-edit #ed { padding-left: max(22px, calc(50% - 400px)); padding-right: max(22px, calc(50% - 400px)); }
 .mode-preview #pv > * { max-width: 760px; margin-left: auto; margin-right: auto; }
 
 /* Markdown 表示 */
@@ -107,9 +103,7 @@ dialog h2 { margin: 0; font-size: 18px; } dialog h3 { font-size: 13px; color: va
   #menuBtn { display: block; }
   header { flex-wrap: wrap; padding: 8px; }
   #title { flex-basis: 50%; }
-  .modes button[data-mode=split] { display: none; }
-  .mode-split #pv { display: none; }
-  #ed { padding: 14px; font-size: 16px; } #pv { padding: 14px 16px 60px; }
+  .mode-edit #ed { padding: 14px; font-size: 16px; } #pv { padding: 14px 16px 60px; }
   #status { min-width: 0; }
 }
 @media (prefers-reduced-motion: reduce) { #side { transition: none; } }
